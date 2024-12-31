@@ -6,9 +6,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 
-use reqwest::Client as HttpClient;
-use async_trait::async_trait;
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Task {
     id: u64,
@@ -90,10 +87,19 @@ impl Database {
     }
 
     fn load_from_file() -> std::io::Result<Self> {
-        let data = fs::read_to_string("database.json")?;
-        let database: Database = serde_json::from_str(&data)?; // MEANING: convert the string to a struct
-        Ok(database)
+        match fs::read_to_string("database.json") {
+            Ok(data) if !data.trim().is_empty() => {
+                let database: Database = serde_json::from_str(&data)?;
+                Ok(database)
+            }
+            Ok(_) | Err(_) => {
+                // Return a new database if the file is empty or not found
+                println!("Database file is empty or missing, initializing a new database.");
+                Ok(Database::new())
+            }
+        }
     }
+    
 }
 
 struct AppState { 
@@ -110,8 +116,19 @@ async fn create_task(state: web::Data<AppState>, task: web::Json<Task>) -> impl 
     HttpResponse::Ok().finish()
 }
 
-async fn read_task_by_id(state: web::Data<AppState>, id: web::Path<u64>) -> impl Responder {
-    let database = state.database
+async fn read_tasks(state: web::Data<AppState>, id: web::Path<u64>) -> impl Responder {
+    let mut database = state.database
+    .lock()
+    .unwrap(); // can replace by expect(msg: "Locked database")
+
+    match database.get(id.into_inner()) { // match returns an Option
+        Some(task) => HttpResponse::Ok().json(task),
+        None => HttpResponse::NotFound().finish()
+    }
+}
+
+async fn read_task(state: web::Data<AppState>, id: web::Path<u64>) -> impl Responder {
+    let mut database = state.database
     .lock()
     .unwrap(); // can replace by expect(msg: "Locked database")
  
@@ -150,8 +167,7 @@ async fn delete_task(state: web::Data<AppState>, id: web::Path<u64>) -> impl Res
     database.delete(&id.into_inner());
     let _ = database.save_to_file();
     HttpResponse::Ok().finish()
-}   
-
+} 
 
 async fn register_user(state: web::Data<AppState>, user: web::Json<User>) -> impl Responder {
     let mut database = state.database
@@ -170,23 +186,19 @@ async fn login_user(state: web::Data<AppState>, user: web::Json<User>) -> impl R
         Some(stored_user) if stored_user.password == user.password => {
             HttpResponse::Ok().body("Login successful")
         },
-        _ => HttpResponse::Unauthorized().body("Login failed, invalid username or password")
+        _ => HttpResponse::Unauthorized().body("Login failed")
     }
 }
 
-// MAIN /////////////////////////////////////////////////////////
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-
-    // Load the database or create a new one
     let database = match Database::load_from_file() {
         Ok(database) => database,
         Err(e) => {
-            println!("Create new database");
+            println!("Error loading database: {}", e);
             Database::new()
         }
     };
-
     // Use AppState to store the locked database (mutex)
     let app_data = web::Data::new(AppState {
         database: Mutex::new(database) // can shared in multiple threads
@@ -210,21 +222,14 @@ async fn main() -> std::io::Result<()> {
             .app_data(app_data.clone())
             .route("/task", web::post().to(create_task))
             .route("/tasks", web::get().to(read_all_tasks))
-            .route("/task/{id}", web::get().to(read_task_by_id))
+            .route("/task/{id}", web::get().to(read_task))
             .route("/task", web::put().to(update_task))    
             .route("/task/{id}", web::delete().to(delete_task))
             .route("/register", web::post().to(register_user))
             .route("/login", web::post().to(login_user))
 
-
-            // Not working, not sure why
-            // .service(web::resource("/task").route(web::put().to(update_task)))
-            // .service(web::resource("/task/{id}").route(web::delete().to(delete_task)))
-            // .service(web::resource("/task").route(web::post().to(create_task)))
-            // .service(web::resource("/tasks").route(web::get().to(read_all_tasks)))
-            // .service(web::resource("/task/{id}").route(web::get().to(read_task_by_id)))
-    })  
+    })
     .bind(("127.0.0.1", 8080))?
     .run()
-    .await
+    .await   
 }

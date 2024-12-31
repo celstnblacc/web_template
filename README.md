@@ -4,4 +4,10 @@
 
 Web template for repository rust-auto-gpt (UDEMY: Build an AutoGPT Code Writing AI Tool With Rust and GPT-4)
 
+74. Project setup
 
+```bash
+cargo build
+cargo run
+```
+Go to http://localhost:8080
