@@ -3,10 +3,13 @@ Foreign Exchange Rates API
 
 Test endpoints with curl:
 curl http://127.0.0.1:8080/forex
-curl http://127.0.0.1:8080/forex/EURUSD
+[{"symbol":"EURUSD","price":1.2},{"symbol":"USDJPY","price":1.0}]% 
 
-Update Forex price:
-curl -X PUT -H "Content-Type: application/json" -d '{"symbol": "EURUSD", "price": 1.23}' http://127.0.0.1:8080/forex
+Update Forex priceÈ
+curl -X PUT -H "Content-Type: application/json" -d '{"symbol":"EURUSD","price":1.2}' http://127.0.0.1:8080/forex
+
+curl http://127.0.0.1:8080/forex/EURUSD
+{"symbol":"EURUSD","price":1.2}% 
  */
 
 use actix_cors::Cors;
@@ -80,6 +83,7 @@ impl ForexDatabase {
                 for (symbol, price) in rates {
                     if let Some(price) = price.as_f64() {
                         self.update(symbol, price);
+                        println!("Updated {} to {}", symbol, price);
                     }
                 }
             } else {
